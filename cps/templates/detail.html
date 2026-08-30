@@ -631,28 +631,19 @@
                                 {% endif %}
                             {% endfor %}
                         </p>
-                        {% set current_rating = (entry.ratings[0].rating / 2)|int if entry.ratings|length > 0 else 0 %}
+                        {% set current_rating = (entry.ratings[0].rating / 2) if entry.ratings|length > 0 else 0 %}
                         <div class="rating" id="detail-rating-block">
                             {% if current_user.role_edit() %}
-                                <input type="number" name="rating" id="detail-rating" class="rating input-lg"
-                                       data-clearable="" data-book-id="{{ entry.id }}"
+                                <div id="detail-rating" class="cwa-half-star-rating" data-cwa-half-star-rating
+                                       data-editable="true" data-book-id="{{ entry.id }}"
                                        data-update-url="{{ url_for('edit-book.edit_list_book', param='rating') }}"
                                        data-toast-on="{{ _('Rating updated') }}"
                                        data-toast-off="{{ _('Rating cleared') }}"
-                                       value="{{ current_rating }}" />
+                                       data-toast-error="{{ _('Rating update failed') }}"
+                                       data-value="{{ current_rating }}"></div>
                             {% else %}
-                                <p>
-                                    {% if current_rating > 0 %}
-                                        {% for number in range(current_rating) %}
-                                            <span class="glyphicon glyphicon-star good"></span>
-                                        {% endfor %}
-                                    {% endif %}
-                                    {% if current_rating < 5 %}
-                                        {% for numer in range(5 - current_rating) %}
-                                            <span class="glyphicon glyphicon-star-empty"></span>
-                                        {% endfor %}
-                                    {% endif %}
-                                </p>
+                                <div class="cwa-half-star-rating" data-cwa-half-star-rating
+                                     data-editable="false" data-value="{{ current_rating }}"></div>
                             {% endif %}
                         </div>
                         {% if entry.series|length > 0 %}
@@ -965,9 +956,7 @@
 <script src="{{ url_for('static', filename='js/details.js') }}"></script>
 <script src="{{ url_for('static', filename='js/email_selection.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fullscreen.js') }}"></script>
-{% if current_user.role_edit() %}
-<script src="{{ url_for('static', filename='js/libs/bootstrap-rating-input.min.js') }}"></script>
-{% endif %}
+<script src="{{ url_for('static', filename='js/half_star_rating.js') }}"></script>
 <script type="text/javascript">
     $(function () {
         var toastTimer;
@@ -1053,32 +1042,27 @@
             });
         });
 
-        var $ratingInput = $("#detail-rating");
-        if ($ratingInput.length && typeof $ratingInput.rating === "function") {
-            $ratingInput.rating();
-            $ratingInput.data("previous", $ratingInput.val());
-            $ratingInput.on("change", function () {
-                var value = $ratingInput.val();
-                var sendValue = value === "0" ? "" : value;
+        var ratingInput = document.getElementById("detail-rating");
+        if (ratingInput && window.CwaHalfStarRating) {
+            CwaHalfStarRating.init(ratingInput);
+            ratingInput.addEventListener("cwa-half-star-change", function (event) {
+                var value = event.detail.value;
+                var sendValue = value === 0 ? "" : value;
+                var previous = event.detail.previousValue;
                 $.ajax({
-                    url: $ratingInput.data("update-url"),
+                    url: ratingInput.getAttribute("data-update-url"),
                     method: "post",
                     data: {
-                        pk: $ratingInput.data("book-id"),
+                        pk: ratingInput.getAttribute("data-book-id"),
                         value: sendValue
                     },
                     success: function () {
-                        var toastMsg = sendValue ? $ratingInput.data("toast-on") : $ratingInput.data("toast-off");
-                        showActionToast(toastMsg, $("#detail-rating-block")[0]);
-                        $ratingInput.data("previous", value);
+                        var toastMsg = sendValue ? ratingInput.getAttribute("data-toast-on") : ratingInput.getAttribute("data-toast-off");
+                        showActionToast(toastMsg, document.getElementById("detail-rating-block"));
                     },
                     error: function () {
-                        var previous = $ratingInput.data("previous");
-                        $ratingInput.val(previous);
-                        var ratingWidget = $ratingInput.data("rating");
-                        if (ratingWidget && typeof ratingWidget.setValue === "function") {
-                            ratingWidget.setValue(previous);
-                        }
+                        CwaHalfStarRating.set(ratingInput, previous);
+                        showActionToast(ratingInput.getAttribute("data-toast-error"), document.getElementById("detail-rating-block"));
                     }
                 });
             });

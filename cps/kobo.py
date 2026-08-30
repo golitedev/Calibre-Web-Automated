@@ -7,6 +7,7 @@
 # See CONTRIBUTORS for full list of authors.
 
 import base64
+import copy
 from datetime import datetime, timezone
 from cps import cw_babel
 from kobo_sync_utils import get_kobo_created_ts
@@ -43,7 +44,7 @@ from .epub import get_epub_layout
 from .constants import COVER_THUMBNAIL_SMALL, COVER_THUMBNAIL_MEDIUM, COVER_THUMBNAIL_LARGE, DEFAULT_PORT
 from .kobo_cover_cache import build_cover_image_id, normalize_cover_uuid
 from .helper import get_download_link
-from .services import SyncToken as SyncToken, hardcover
+from .services import SyncToken as SyncToken, hardcover, inkly
 from .web import download_required
 from .kobo_auth import requires_kobo_auth, get_auth_token
 
@@ -1000,10 +1001,25 @@ def HandleStateRequest(book_uuid):
             ub.session.rollback()
             abort(400, description="Malformed request data is missing 'ReadingStates' key")
 
-        push_reading_state_to_hardcover(current_user, book, request_bookmark['ProgressPercent'])
-
         ub.session.merge(kobo_reading_state)
         ub.session_commit()
+
+        # CWA's local Kobo state is the primary operation. Inkly only gets a
+        # durable local outbox row after that commit and is never contacted on
+        # the Kobo request path.
+        try:
+            inkly.queue_reading_state(current_user, book, copy.deepcopy(request_reading_state))
+        except Exception:
+            log.error("Failed to enqueue Inkly reading state for book %s; Kobo state was saved", book.id)
+
+        # Keep Hardcover as an independent optional sink. Its failure must not
+        # affect either the Kobo response or the Inkly outbox.
+        try:
+            progress_percentage = request_bookmark.get('ProgressPercent') if request_bookmark else None
+            if progress_percentage is not None:
+                push_reading_state_to_hardcover(current_user, book, progress_percentage)
+        except Exception:
+            log.error("Hardcover reading-state sync failed for book %s", book.id)
         return jsonify({
             "RequestResult": "Success",
             "UpdateResults": [update_results_response],
@@ -1369,8 +1385,12 @@ def _kobo_reading_services_stub():
     # account, so CWA issues a dummy token) those calls would 401 against CWA,
     # which the device turns into a web request error and uses to abort the sync
     # batch (notebooks -> SyncNotebookCommand), so nothing -- not even shelves --
-    # commits. Return benign empty responses so the sync completes. Only the Kobo
-    # reading-services paths are matched; every other request falls through.
+    # commits. Return benign empty responses so the sync completes. If a local
+    # reading-services sink is configured, let the actual reading-services
+    # blueprint handle the request instead of short-circuiting it here. Only the
+    # Kobo reading-services paths are matched; every other request falls through.
+    if _local_reading_services_enabled():
+        return None
     p = request.path
     if p == "/api/v3/content/checkforchanges":
         return make_response(jsonify([]))
@@ -1381,6 +1401,20 @@ def _kobo_reading_services_stub():
     if p.startswith("/api/internal/notebooks"):
         return make_response(jsonify({"data": [], "totalResults": 0}))
     return None
+
+
+def _local_reading_services_enabled():
+    """Whether this Kobo user has a CWA reading-services sink configured."""
+    if (
+        config.config_hardcover_annotations_sync
+        and bool(hardcover)
+        and getattr(current_user, "hardcover_token", None)
+    ):
+        return True
+    return bool(
+        getattr(current_user, "is_authenticated", False)
+        and inkly.has_inkly_config(current_user)
+    )
 
 
 @kobo.route("/v1/initialization")
@@ -1446,7 +1480,7 @@ def HandleInitRequest():
                                                                width="{width}",
                                                                height="{height}",
                                                                isGreyscale='false'))
-        if config.config_hardcover_annotations_sync and bool(hardcover):
+        if _local_reading_services_enabled():
             kobo_resources["reading_services_host"] = calibre_web_url
     else:
         kobo_resources["image_host"] = url_for("web.index", _external=True).strip("/")
@@ -1465,7 +1499,7 @@ def HandleInitRequest():
                                                                height="{height}",
                                                                isGreyscale='false',
                                                                _external=True))
-        if config.config_hardcover_annotations_sync and bool(hardcover):
+        if _local_reading_services_enabled():
             kobo_resources["reading_services_host"] = url_for("web.index", _external=True).strip("/")
 
     # When not proxying Kobo Store requests, point oauth_host to CWA and
@@ -1475,11 +1509,10 @@ def HandleInitRequest():
                                   auth_token=kobo_auth.get_auth_token(),
                                   _external=True)
         kobo_resources["oauth_host"] = oauth_token_url.rsplit("/oauth", 1)[0] + "/oauth"
-        # Device strips reading_services_host to scheme+host; keep it on CWA so its
-        # reading-services calls hit us (see _kobo_reading_services_stub) instead of
-        # Kobo cloud, which 401s our dummy token and aborts the sync.
-        if not (config.config_hardcover_annotations_sync and bool(hardcover)):
-            kobo_resources["reading_services_host"] = url_for("web.index", _external=True).strip("/")
+        # Device strips reading_services_host to scheme+host. Keep it on CWA
+        # both for the benign local stub and for configured local sinks; the
+        # latter must reach the reading-services blueprint for interception.
+        kobo_resources["reading_services_host"] = url_for("web.index", _external=True).strip("/")
 
     response = make_response(jsonify({"Resources": kobo_resources}))
     response.headers["x-kobo-apitoken"] = "e30="

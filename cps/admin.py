@@ -45,6 +45,7 @@ from .usermanagement import user_login_required
 from .cw_babel import get_available_translations, get_available_locale, get_user_locale_language
 from . import debug_info
 from .string_helper import strip_whitespaces
+from .services import inkly
 
 log = logger.create()
 
@@ -2580,6 +2581,13 @@ def _delete_user(content):
             ub.session.query(ub.RemoteAuthToken).filter(ub.RemoteAuthToken.user_id == content.id).delete()
             ub.session.query(ub.User_Sessions).filter(ub.User_Sessions.user_id == content.id).delete()
             ub.session.query(ub.KoboSyncedBooks).filter(ub.KoboSyncedBooks.user_id == content.id).delete()
+            try:
+                from .inkly_outbox import InklyOutboxEvent, InklyMetadataSync
+                ub.session.query(InklyOutboxEvent).filter(InklyOutboxEvent.user_id == content.id).delete()
+                ub.session.query(InklyMetadataSync).filter(InklyMetadataSync.user_id == content.id).delete()
+            except Exception:
+                # Older databases may not have the optional integration tables.
+                ub.session.rollback()
             # delete KoboReadingState and all it's children
             kobo_entries = ub.session.query(ub.KoboReadingState).filter(ub.KoboReadingState.user_id == content.id).all()
             for kobo_entry in kobo_entries:
@@ -2771,6 +2779,7 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
     if to_save.get("locale"):
         content.locale = to_save["locale"]
     try:
+        inkly.apply_user_settings(content, to_save)
         anonymous = content.is_anonymous
         content.role = constants.selected_roles(to_save)
         if anonymous:

@@ -9,6 +9,8 @@ import json
 
 from cps import logger, db
 from cps.search_metadata import cl as metadata_providers
+from cps.rating import rating_to_calibre
+from cps.services import inkly
 import sys
 sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
@@ -255,12 +257,12 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
         if (cwa_settings.get('auto_metadata_update_rating', True) and 
             hasattr(metadata, 'rating') and metadata.rating):
             try:
-                rating_value = float(metadata.rating)
-                if 0 <= rating_value <= 10:  # Calibre uses 0-10 scale
+                rating_x2 = rating_to_calibre(metadata.rating)
+                if rating_x2 is not None:
                     if book.ratings:
-                        book.ratings[0].rating = int(rating_value * 2)  # Convert to Calibre's 0-10 scale
+                        book.ratings[0].rating = rating_x2
                     else:
-                        rating = db.Ratings(rating=int(rating_value * 2))
+                        rating = db.Ratings(rating=rating_x2)
                         calibre_db_instance.session.add(rating)
                         book.ratings = [rating]
                     updated = True
@@ -296,6 +298,10 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
         
         if updated:
             calibre_db_instance.session.commit()
+            try:
+                inkly.queue_book_metadata_for_users(book)
+            except Exception:
+                log.error("Failed to queue Inkly metadata for book %s", getattr(book, 'id', None))
             
         return updated
         

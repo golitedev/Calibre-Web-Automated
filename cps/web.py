@@ -51,6 +51,7 @@ from .services.worker import WorkerThread
 from .tasks_status import render_task_status
 from .usermanagement import user_login_required
 from .string_helper import strip_whitespaces
+from .services import inkly
 
 # CWA Imports
 import sqlite3
@@ -2428,6 +2429,7 @@ def change_profile(kobo_support, hardcover_support, local_oauth_check, oauth_sta
         if old_state == 0 and current_user.kobo_only_shelves_sync == 1:
             kobo_sync_status.update_on_sync_shelfs(current_user.id)
         current_user.hardcover_token = to_save.get("hardcover_token","" ).replace("Bearer ","" ) or None
+        inkly.apply_user_settings(current_user, to_save)
         # Auto-send and metadata fetch settings
         current_user.auto_send_enabled = to_save.get("auto_send_enabled") == "on"
         current_user.auto_metadata_fetch = to_save.get("auto_metadata_fetch") == "on"

@@ -293,7 +293,7 @@
     {% endif %}
     
     <!-- OAuth & API Integrations Card -->
-    {% if (registered_oauth.keys()| length > 0 and not new_user and profile) or (hardcover_support and not new_user) or (kobo_support and not new_user) %}
+    {% if (registered_oauth.keys()| length > 0 and not new_user and profile) or (hardcover_support and not new_user) or (kobo_support and not new_user) or (not new_user and not content.role_anonymous()) %}
     <div class="settings-container" style="max-width: none; margin-inline: 0rem;">
       <h4 class="settings-section-header">{{_('OAuth & API Integrations')}}</h4>
       
@@ -315,6 +315,26 @@
         <label for="hardcover_token">{{_('Hardcover API Token')}}</label>
         <input type="text" class="form-control" name="hardcover_token" id="hardcover_token" value="{{ content.hardcover_token if content.hardcover_token != None }}">
         <p class="cwa-settings-tip">{{_('API token for Hardcover metadata provider integration.')}}</p>
+      </div>
+      {% endif %}
+
+      {% if not new_user and not content.role_anonymous() %}
+      <div class="form-group">
+        <label for="inkly_base_url">{{_('Inkly / Calibre-Web Automated')}}</label>
+        <div style="margin-bottom: 10px;">
+          <input type="checkbox" name="inkly_enabled" id="inkly_enabled" {% if content.inkly_enabled %}checked{% endif %} style="accent-color: var(--color-secondary);">
+          <label for="inkly_enabled">{{_('Enable Inkly Kobo synchronization')}}</label>
+        </div>
+        <input type="url" class="form-control" name="inkly_base_url" id="inkly_base_url"
+               value="{{ content.inkly_base_url or '' }}" placeholder="https://inkly.example.com">
+        <p class="cwa-settings-tip">{{_('Inkly base URL. CWA appends /api/integrations/cwa/events when delivering events.')}}</p>
+        <input type="password" class="form-control" name="inkly_token" id="inkly_token"
+               value="" autocomplete="new-password" placeholder="{{_('Enter a new token to replace the stored token')}}">
+        <div style="margin-top: 10px;">
+          <input type="checkbox" name="inkly_clear_token" id="inkly_clear_token" style="accent-color: var(--color-secondary);">
+          <label for="inkly_clear_token">{{_('Clear stored Inkly token')}}</label>
+        </div>
+        <p class="cwa-settings-tip">{{_('The token is never displayed after saving. Leave the token field blank to keep the current token.')}}</p>
       </div>
       {% endif %}
       

@@ -31,6 +31,57 @@ body.modal-open #remove-from-shelves + .tags {
   display: none;
 }
 
+/* Shared first-party five-star control. The fill is clipped per star so
+   half-star values do not need a font or image dependency. */
+.cwa-half-star-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.12em;
+    color: rgba(255, 255, 255, 0.35);
+    line-height: 1;
+    min-height: 1.6em;
+}
+
+.cwa-half-star-rating[role="slider"] {
+    cursor: pointer;
+    outline: none;
+}
+
+.cwa-half-star-rating[role="slider"]:focus-visible {
+    outline: 2px solid rgb(255, 105, 180);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+
+.cwa-half-star {
+    position: relative;
+    display: inline-block;
+    width: 1.15em;
+    height: 1.15em;
+    font-size: 1.25em;
+    color: rgba(255, 255, 255, 0.35);
+    font-family: Arial, sans-serif;
+    line-height: 1.15em;
+}
+
+.cwa-half-star::before,
+.cwa-half-star::after {
+    position: absolute;
+    inset: 0;
+    content: "★";
+    white-space: nowrap;
+}
+
+.cwa-half-star::before {
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.cwa-half-star::after {
+    width: var(--cwa-star-fill, 0%);
+    overflow: hidden;
+    color: rgb(255, 105, 180);
+}
+
 /* Target only specific selectpicker dropdowns (Tags and other form elements) */
 
 /* #include_serie + .btn-group .dropdown-menu,

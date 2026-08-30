@@ -120,7 +120,10 @@
     </div>
     <div class="form-group">
       <label for="rating">{{_('Rating')}}</label>
-      <input type="number"  name="rating" id="rating" class="rating input-lg" data-clearable="" value="{% if book.ratings %}{{(book.ratings[0].rating / 2)|int}}{% endif %}"/>
+      <input type="hidden" name="rating" id="rating-value" value="{% if book.ratings %}{{book.ratings[0].rating / 2}}{% else %}0{% endif %}">
+      <div id="rating" class="cwa-half-star-rating" data-cwa-half-star-rating
+           data-editable="true" data-input-id="rating-value"
+           data-value="{% if book.ratings %}{{book.ratings[0].rating / 2}}{% else %}0{% endif %}"></div>
     </div>
       <div class="form-group">
       <label for="comments">{{_('Description')}}</label>
@@ -406,7 +409,7 @@
     })
 </script>
 <script src="{{ url_for('static', filename='js/libs/typeahead.bundle.js') }}"></script>
-<script src="{{ url_for('static', filename='js/libs/bootstrap-rating-input.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/half_star_rating.js') }}"></script>
 <script src="{{ url_for('static', filename='js/get_meta.js') }}"></script>
 <script src="{{ url_for('static', filename='js/libs/tinymce/tinymce.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/libs/bootstrap-datepicker/bootstrap-datepicker.min.js') }}"></script>

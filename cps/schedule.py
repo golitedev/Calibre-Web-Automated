@@ -71,6 +71,7 @@ def register_scheduled_tasks(reconnect=True):
 
         _schedule_hardcover_auto_fetch(scheduler, timezone_info)
         _schedule_archived_book_cleanup(scheduler, timezone_info)
+        _schedule_inkly_outbox(scheduler)
 
         # Kick-off tasks, if they should currently be running
         if should_task_be_running(start, duration):
@@ -376,4 +377,18 @@ def _schedule_archived_book_cleanup(scheduler, timezone_info):
                                     trigger=trigger, name=name, hidden=True)
     except Exception:
         # Scheduling is best-effort; never block startup
+        pass
+
+
+def _schedule_inkly_outbox(scheduler):
+    """Deliver durable Inkly events using the existing APScheduler."""
+    try:
+        from .inkly_outbox import deliver_due_inkly_events
+        scheduler.schedule(
+            func=deliver_due_inkly_events,
+            trigger=IntervalTrigger(seconds=15),
+            name="Inkly outbox delivery",
+        )
+    except Exception:
+        # The integration is optional and must never prevent CWA startup.
         pass

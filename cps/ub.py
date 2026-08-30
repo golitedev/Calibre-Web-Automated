@@ -288,6 +288,11 @@ class User(UserBase, Base):
     auto_send_enabled = Column(Boolean, default=False)
     # Allow entering additional email addresses on send-to-eReader
     allow_additional_ereader_emails = Column(Boolean, default=True)
+    # Per-user opt-in Inkly/Kobo integration credentials. The token is kept
+    # because CWA must send it to Inkly; it is never rendered or logged.
+    inkly_enabled = Column(Boolean, default=False)
+    inkly_base_url = Column(String, default=None)
+    inkly_token = Column(String, default=None)
 
 
 if oauth_support:
@@ -322,6 +327,9 @@ class OAuthProvider(Base):
 class Anonymous(AnonymousUserMixin, UserBase):
     def __init__(self):
         self.hardcover_token = None
+        self.inkly_enabled = False
+        self.inkly_base_url = None
+        self.inkly_token = None
         self.kobo_only_shelves_sync = None
         self.opds_only_shelves_sync = None
         self.view_settings = None
@@ -358,6 +366,9 @@ class Anonymous(AnonymousUserMixin, UserBase):
         self.kobo_only_shelves_sync = data.kobo_only_shelves_sync
         self.opds_only_shelves_sync = data.opds_only_shelves_sync
         self.hardcover_token = data.hardcover_token
+        self.inkly_enabled = data.inkly_enabled
+        self.inkly_base_url = data.inkly_base_url
+        self.inkly_token = data.inkly_token
         self.auto_send_enabled = data.auto_send_enabled
     def role_admin(self):
         return False
@@ -896,6 +907,21 @@ def migrate_user_table(engine, _session):
         _safe_session_rollback(_session, "user.hardcover_token")
         _run_ddl_with_retry(engine, "ALTER TABLE user ADD column 'hardcover_token' String")
 
+    for column_name, column_type, default in (
+        ("inkly_enabled", "Boolean", "DEFAULT 0"),
+        ("inkly_base_url", "String", "DEFAULT NULL"),
+        ("inkly_token", "String", "DEFAULT NULL"),
+    ):
+        try:
+            _session.execute(text("SELECT {} FROM user LIMIT 1".format(column_name)))
+            _session.commit()
+        except exc.OperationalError:
+            _safe_session_rollback(_session, "user." + column_name)
+            _run_ddl_with_retry(
+                engine,
+                "ALTER TABLE user ADD column '{}' {} {}".format(column_name, column_type, default),
+            )
+
     try:
         _session.query(exists().where(User.opds_only_shelves_sync)).scalar()
         _session.commit()
@@ -1119,6 +1145,8 @@ def migrate_shelf_table(engine, _session):
 # Migration is done by checking if relevant columns are existing, and then adding rows with SQL commands
 def migrate_Database(_session):
     engine = _session.bind
+    from . import inkly_outbox
+    inkly_outbox.ensure_tables(engine)
     add_missing_tables(engine, _session)
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
@@ -1310,6 +1338,10 @@ def init_db(app_db_path):
     session = Session()
 
     _healthcheck_app_db(app_db_path)
+
+    # Import integration models before create_all so new installations create
+    # their tables alongside the rest of app.db.
+    from . import inkly_outbox  # noqa: F401
 
     if os.path.exists(app_db_path):
         Base.metadata.create_all(engine)

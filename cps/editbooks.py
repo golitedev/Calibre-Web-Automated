@@ -28,6 +28,7 @@ from . import constants, logger, isoLanguages, gdriveutils, uploader, helper, ko
 from .clean_html import clean_string
 from . import config, ub, db, calibre_db
 from .services.worker import WorkerThread
+from .services import inkly
 from .tasks.upload import TaskUpload
 from .render_template import render_title_template
 from .kobo_sync_status import change_archived_books
@@ -36,6 +37,7 @@ from .file_helper import validate_mime_type
 from .cwa_functions import get_ingest_dir
 from .usermanagement import user_login_required, login_required_if_no_ano
 from .string_helper import strip_whitespaces
+from .rating import rating_to_calibre
 from werkzeug.utils import secure_filename
 import uuid
 
@@ -605,6 +607,12 @@ def edit_book_param(param, vals):
             book.sort = sort_param
             calibre_db.session.commit()
 
+        if metadata_changed:
+            try:
+                inkly.queue_book_metadata_for_users(book)
+            except Exception:
+                log.error("Failed to queue Inkly metadata for book %s", book.id)
+
         if metadata_changed and log_key is not None:
             try:
                 payload = {log_key: log_value}
@@ -825,6 +833,9 @@ def table_xchange_author_title():
 
             if config.config_use_google_drive:
                 gdriveutils.updateGdriveCalibreFromLocal()
+
+            if modify_date:
+                inkly.queue_book_metadata_for_users(book)
         return json.dumps({'success': True})
     return ""
 
@@ -971,6 +982,12 @@ def do_edit_book(book_id, upload_formats=None):
                 book_path=book.path,
                 last_modified=book.last_modified,
             )
+
+        if modify_date:
+            try:
+                inkly.queue_book_metadata_for_users(book)
+            except Exception:
+                log.error("Failed to queue Inkly metadata for book %s", book.id)
 
         # CWA: Export of changed Metadata after commit, to avoid race conditions with folder renames
         # Only create log if there were actual meaningful metadata changes
@@ -1499,10 +1516,16 @@ def render_edit_book(book_id):
 def edit_book_ratings(to_save, book):
     changed = False
     if strip_whitespaces(to_save.get("rating", "")):
-        old_rating = False
-        if len(book.ratings) > 0:
-            old_rating = book.ratings[0].rating
-        rating_x2 = int(float(to_save.get("rating", "")) * 2)
+        old_rating_object = book.ratings[0] if len(book.ratings) > 0 else None
+        old_rating = old_rating_object.rating if old_rating_object is not None else None
+        rating_x2 = rating_to_calibre(to_save.get("rating", ""))
+        if rating_x2 is None:
+            return False
+        if rating_x2 == 0:
+            if old_rating_object is not None:
+                book.ratings.remove(old_rating_object)
+                return True
+            return False
         if rating_x2 != old_rating:
             changed = True
             is_rating = calibre_db.session.query(db.Ratings).filter(db.Ratings.rating == rating_x2).first()
@@ -1511,8 +1534,8 @@ def edit_book_ratings(to_save, book):
             else:
                 new_rating = db.Ratings(rating=rating_x2)
                 book.ratings.append(new_rating)
-            if old_rating:
-                book.ratings.remove(book.ratings[0])
+            if old_rating_object is not None:
+                book.ratings.remove(old_rating_object)
     else:
         if len(book.ratings) > 0:
             book.ratings.remove(book.ratings[0])

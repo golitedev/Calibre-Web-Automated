@@ -128,12 +128,17 @@ $(function () {
     }
     $("#languages").val(uniqueLanguages.join(", "));
     if (updateItems.rating) {
-      var roundedRating = Math.round(book.rating);
-      var ratingWidget = $("#rating").data("rating");
-      if (ratingWidget && typeof ratingWidget.setValue === "function") {
-        ratingWidget.setValue(roundedRating);
+      var importedRating = window.CwaHalfStarRating
+        ? CwaHalfStarRating.normalize(book.rating)
+        : Math.round(Number(book.rating) * 2) / 2;
+      var ratingElement = document.getElementById("rating");
+      if (ratingElement && window.CwaHalfStarRating) {
+        CwaHalfStarRating.set(ratingElement, importedRating);
       }
-      $("#rating").val(roundedRating);
+      var ratingField = document.getElementById("rating-value");
+      if (ratingField) {
+        ratingField.value = importedRating > 0 ? importedRating : "";
+      }
     }
 
     if (updateItems.cover && book.cover && $("#cover_url").length) {
