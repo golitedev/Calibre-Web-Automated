@@ -2603,6 +2603,21 @@ def _delete_user(content):
         raise Exception(_("No admin user remaining, can't delete user"))
 
 
+def _apply_inkly_settings_or_redirect(to_save, content):
+    """Apply Inkly settings, returning to the edit form on validation errors."""
+    try:
+        inkly.apply_user_settings(content, to_save)
+    except ValueError as ex:
+        # The user-edit handler has already staged other changes by this point.
+        # Roll them back before redirecting so an invalid Inkly form cannot leave
+        # partial settings in the session or render with an incomplete context.
+        ub.session.rollback()
+        log.error(ex)
+        flash(str(ex), category="error")
+        return redirect(url_for('admin.edit_user', user_id=content.id))
+    return None
+
+
 def _handle_edit_user(to_save, content, languages, translations, kobo_support):
     if to_save.get("delete"):
         try:
@@ -2779,7 +2794,9 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
     if to_save.get("locale"):
         content.locale = to_save["locale"]
     try:
-        inkly.apply_user_settings(content, to_save)
+        inkly_error_response = _apply_inkly_settings_or_redirect(to_save, content)
+        if inkly_error_response is not None:
+            return inkly_error_response
         anonymous = content.is_anonymous
         content.role = constants.selected_roles(to_save)
         if anonymous:
