@@ -549,11 +549,30 @@ def queue_annotation_sync(user, book, updated_annotations, deleted_annotation_id
 
 
 def queue_book_metadata_for_users(book):
-    """Queue current metadata for every enabled CWA user after a local edit."""
+    """Queue current metadata for users already linked to this book.
+
+    A local metadata edit is a fan-out update, not a discovery mechanism. A
+    user without an existing metadata/link row should first enter the
+    integration through a Kobo reading or annotation sync; that path still
+    creates the row and queues the initial metadata event via
+    :func:`_enqueue_with_metadata`.
+    """
     if book is None:
         return 0
     try:
-        users = ub.session.query(ub.User).filter(ub.User.inkly_enabled.is_(True)).all()
+        from ..inkly_outbox import InklyMetadataSync
+
+        book_uuid = build_inkly_book(book, include_cover=False)["uuid"]
+        users = (
+            ub.session.query(ub.User)
+            .join(InklyMetadataSync, InklyMetadataSync.user_id == ub.User.id)
+            .filter(
+                ub.User.inkly_enabled.is_(True),
+                InklyMetadataSync.book_uuid == book_uuid,
+            )
+            .distinct()
+            .all()
+        )
     except Exception:
         log.error("Failed to find users for Inkly metadata synchronization")
         return 0

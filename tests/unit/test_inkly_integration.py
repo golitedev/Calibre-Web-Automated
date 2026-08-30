@@ -200,8 +200,11 @@ def test_outbox_network_failure_uses_backoff_and_keeps_event_pending():
 
 
 @pytest.mark.unit
-def test_metadata_queue_targets_enabled_users_without_network_calls(monkeypatch):
+def test_metadata_queue_targets_only_linked_users_without_network_calls(monkeypatch):
     class FakeColumn:
+        def __eq__(self, value):
+            return self
+
         def is_(self, value):
             return value
 
@@ -211,14 +214,26 @@ def test_metadata_queue_targets_enabled_users_without_network_calls(monkeypatch)
         def filter(self, *_args):
             return self
 
+        def join(self, *_args):
+            return self
+
+        def distinct(self):
+            return self
+
         def all(self):
-            return users
+            return [users[1]]
 
     class FakeSession:
         def query(self, *_args):
             return FakeQuery()
 
     monkeypatch.setattr(inkly.ub, "User", SimpleNamespace(inkly_enabled=FakeColumn()))
+    monkeypatch.setattr(inkly.ub.User, "id", FakeColumn(), raising=False)
+    monkeypatch.setattr(
+        inkly_outbox,
+        "InklyMetadataSync",
+        SimpleNamespace(user_id=FakeColumn(), book_uuid=FakeColumn()),
+    )
     monkeypatch.setattr(inkly.ub, "session", FakeSession())
     queued = []
     monkeypatch.setattr(
@@ -226,8 +241,8 @@ def test_metadata_queue_targets_enabled_users_without_network_calls(monkeypatch)
         "_enqueue_with_metadata",
         lambda user, book, events: queued.append(user.id) or True,
     )
-    assert inkly.queue_book_metadata_for_users(_book()) == 2
-    assert queued == [7, 8]
+    assert inkly.queue_book_metadata_for_users(_book()) == 1
+    assert queued == [8]
 
 
 @pytest.mark.unit
