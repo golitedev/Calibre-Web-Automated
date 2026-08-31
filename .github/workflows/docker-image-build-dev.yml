@@ -5,6 +5,9 @@ on:
   push:
     branches-ignore:
       - 'main'
+      # Inkly publishes its own GHCR-only AMD64 image. Do not require the
+      # general Docker Hub + ARM split pipeline for this branch.
+      - 'inkly-integration'
     paths:
       - 'empty_library/**'
       - 'cps/**'
