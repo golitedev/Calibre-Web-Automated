@@ -2,10 +2,22 @@
 """Durable local queue and scheduled delivery for Inkly events."""
 
 import email.utils
+import errno
+import os
 from datetime import datetime, timedelta, timezone
 
 import requests
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.sql.expression import and_, or_
 
 from . import logger, ub
@@ -298,15 +310,77 @@ def _finish_exception(event, category, now):
     event.next_attempt_at = now + timedelta(seconds=retry_delay(event.attempt_count, now=now))
 
 
+def _close_http_responses(*responses):
+    """Close each distinct response without letting cleanup mask delivery state."""
+    closed = set()
+    for response in responses:
+        if response is None or id(response) in closed:
+            continue
+        closed.add(id(response))
+        try:
+            response.close()
+        except Exception:
+            log.warning("Failed to close an Inkly HTTP response")
+
+
+def _is_emfile(error):
+    """Return whether an exception chain contains an EMFILE failure."""
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if getattr(current, "errno", None) == errno.EMFILE:
+            return True
+        for attribute in ("__cause__", "__context__", "reason"):
+            nested = getattr(current, attribute, None)
+            if isinstance(nested, BaseException):
+                pending.append(nested)
+        pending.extend(item for item in getattr(current, "args", ()) if isinstance(item, BaseException))
+    return False
+
+
+def _fd_diagnostics():
+    """Return non-sensitive process FD usage and limits when available."""
+    open_fds = None
+    soft_limit = None
+    hard_limit = None
+    try:
+        open_fds = len(os.listdir("/proc/self/fd"))
+    except OSError:
+        pass
+    try:
+        import resource
+        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (ImportError, OSError, ValueError):
+        pass
+    return open_fds, soft_limit, hard_limit
+
+
+def _log_emfile_diagnostics(error):
+    if not _is_emfile(error):
+        return
+    open_fds, soft_limit, hard_limit = _fd_diagnostics()
+    log.error(
+        "Inkly delivery encountered EMFILE: open_fds=%s nofile_soft=%s nofile_hard=%s",
+        open_fds if open_fds is not None else "unavailable",
+        soft_limit if soft_limit is not None else "unavailable",
+        hard_limit if hard_limit is not None else "unavailable",
+    )
+
+
 def deliver_due_inkly_events(limit=MAX_DELIVERY_BATCH, now=None, _session=None):
     """Deliver due rows through the existing scheduled-task infrastructure."""
     from .services import inkly
 
     now = now or utc_now()
     own_session = _session is None
-    session = _session or _new_session()
+    session = None
     result = {"delivered": 0, "retried": 0, "terminal": 0, "auth_failed": 0, "skipped": 0}
     try:
+        session = _session if _session is not None else _new_session()
         events = session.query(InklyOutboxEvent).filter(
             InklyOutboxEvent.status == OUTBOX_STATUS_PENDING,
             or_(InklyOutboxEvent.next_attempt_at.is_(None), InklyOutboxEvent.next_attempt_at <= now),
@@ -314,6 +388,9 @@ def deliver_due_inkly_events(limit=MAX_DELIVERY_BATCH, now=None, _session=None):
 
         for event in events:
             response = None
+            exception_response = None
+            delivery_error = None
+            status_code = None
             user = session.query(ub.User).filter(ub.User.id == event.user_id).first()
             user_config = inkly.get_inkly_config(user) if user else None
             if not user_config:
@@ -333,28 +410,45 @@ def deliver_due_inkly_events(limit=MAX_DELIVERY_BATCH, now=None, _session=None):
 
             try:
                 response = inkly.send_inkly_event(user_config, payload)
+                status_code = getattr(response, "status_code", None)
                 outcome = _finish_response(event, response, now)
-            except requests.exceptions.Timeout:
+            except requests.exceptions.Timeout as error:
+                delivery_error = error
+                exception_response = getattr(error, "response", None)
                 outcome = "retry"
                 _finish_exception(event, "network_timeout", now)
-            except requests.exceptions.RequestException:
+            except requests.exceptions.RequestException as error:
+                delivery_error = error
+                exception_response = getattr(error, "response", None)
                 outcome = "retry"
                 _finish_exception(event, "network_error", now)
-            except Exception:
+            except Exception as error:
+                delivery_error = error
+                exception_response = getattr(error, "response", None)
                 outcome = "retry"
                 _finish_exception(event, "delivery_error", now)
+            finally:
+                # _finish_response must inspect status/Retry-After first, but
+                # every returned or exception-attached response is released
+                # before DB bookkeeping or the next event in the batch.
+                _close_http_responses(response, exception_response)
+
+            if delivery_error is not None:
+                _log_emfile_diagnostics(delivery_error)
 
             if outcome in ("retry", "terminal", "auth_failed"):
-                _log_delivery_failure(event, event.last_error, getattr(locals().get("response", None), "status_code", None))
+                _log_delivery_failure(event, event.last_error, status_code)
             session.commit()
-            result[outcome] += 1
+            result["retried" if outcome == "retry" else outcome] += 1
         return result
-    except Exception:
-        session.rollback()
+    except Exception as error:
+        if session is not None:
+            session.rollback()
+        _log_emfile_diagnostics(error)
         log.error("Inkly outbox worker failed; queued events remain inspectable")
         return result
     finally:
-        if own_session:
+        if own_session and session is not None:
             try:
                 session.close()
             except Exception:

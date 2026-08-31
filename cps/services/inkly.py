@@ -588,7 +588,7 @@ def queue_book_metadata_for_users(book):
 
 
 def send_inkly_event(user_config, payload):
-    """POST one event using the bounded integration timeout."""
+    """POST one event using the bounded timeout; the caller owns the response."""
     return requests.post(
         user_config["endpoint"],
         headers={
