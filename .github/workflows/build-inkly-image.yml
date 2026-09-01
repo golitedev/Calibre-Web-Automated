@@ -41,7 +41,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          # The full image currently depends on Launchpad's deadsnakes PPA,
+          # which can prevent an urgent application-only fix from publishing.
+          file: ./Dockerfile.inkly-hotfix
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}

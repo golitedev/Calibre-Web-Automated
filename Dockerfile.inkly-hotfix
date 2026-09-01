@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+
+# Publish application-only Inkly fixes without rebuilding CWA's system and
+# Python dependencies. The base tag is resolved before the replacement image
+# is pushed, so it refers to the last complete Inkly image.
+ARG BASE_IMAGE=ghcr.io/golitedev/calibre-web-automated:inkly-latest
+FROM ${BASE_IMAGE}
+
+ARG VERSION
+
+COPY --chown=abc:abc cps/ub.py /app/calibre-web-automated/cps/ub.py
+
+RUN echo "${VERSION}" > /app/CWA_RELEASE
