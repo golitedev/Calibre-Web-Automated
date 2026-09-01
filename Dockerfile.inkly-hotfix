@@ -9,5 +9,6 @@ FROM ${BASE_IMAGE}
 ARG VERSION
 
 COPY --chown=abc:abc cps/ub.py /app/calibre-web-automated/cps/ub.py
+COPY --chown=abc:abc cps/static/css/cwa.css /app/calibre-web-automated/cps/static/css/cwa.css
 
 RUN echo "${VERSION}" > /app/CWA_RELEASE

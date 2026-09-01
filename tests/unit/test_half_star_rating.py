@@ -34,10 +34,15 @@ def test_rating_rejects_values_outside_the_five_star_scale():
 @pytest.mark.unit
 def test_half_star_component_is_first_party_and_does_not_patch_vendor_plugin():
     component = (REPO_ROOT / "cps/static/js/half_star_rating.js").read_text(encoding="utf-8")
+    styles = (REPO_ROOT / "cps/static/css/cwa.css").read_text(encoding="utf-8")
+    hotfix_dockerfile = (REPO_ROOT / "Dockerfile.inkly-hotfix").read_text(encoding="utf-8")
     vendor = (REPO_ROOT / "cps/static/js/libs/bootstrap-rating-input.min.js").read_text(encoding="utf-8")
     assert "addEventListener" in component
     assert "CwaHalfStarRating" in component
-    assert "rgb(255, 105, 180)" in (REPO_ROOT / "cps/static/css/cwa.css").read_text(encoding="utf-8")
+    assert "rgb(255, 105, 180)" in styles
+    assert "stroke-linejoin='round'" in styles
+    assert "clip-path: inset" in styles
+    assert "cps/static/css/cwa.css" in hotfix_dockerfile
     assert vendor == (REPO_ROOT / "cps/static/js/libs/bootstrap-rating-input.min.js").read_text(encoding="utf-8")
 
 

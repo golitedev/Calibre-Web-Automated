@@ -31,15 +31,15 @@ body.modal-open #remove-from-shelves + .tags {
   display: none;
 }
 
-/* Shared first-party five-star control. The fill is clipped per star so
-   half-star values do not need a font or image dependency. */
+/* Shared first-party five-star control. Both layers use the same rounded SVG
+   mask, so partial values split the visible star at its exact center. */
 .cwa-half-star-rating {
     display: inline-flex;
     align-items: center;
-    gap: 0.12em;
+    gap: 0.16em;
     color: rgba(255, 255, 255, 0.35);
     line-height: 1;
-    min-height: 1.6em;
+    min-height: 1.75em;
 }
 
 .cwa-half-star-rating[role="slider"] {
@@ -55,21 +55,21 @@ body.modal-open #remove-from-shelves + .tags {
 
 .cwa-half-star {
     position: relative;
-    display: inline-block;
-    width: 1.15em;
-    height: 1.15em;
-    font-size: 1.25em;
+    display: block;
+    flex: 0 0 1.55em;
+    width: 1.55em;
+    height: 1.55em;
     color: rgba(255, 255, 255, 0.35);
-    font-family: Arial, sans-serif;
-    line-height: 1.15em;
 }
 
 .cwa-half-star::before,
 .cwa-half-star::after {
     position: absolute;
     inset: 0;
-    content: "★";
-    white-space: nowrap;
+    content: "";
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' stroke='white' stroke-width='1.25' stroke-linejoin='round' d='M12 2.7l2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 16.9l-5.56 2.92 1.06-6.2L3 9.23l6.22-.9L12 2.7z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' stroke='white' stroke-width='1.25' stroke-linejoin='round' d='M12 2.7l2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 16.9l-5.56 2.92 1.06-6.2L3 9.23l6.22-.9L12 2.7z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .cwa-half-star::before {
@@ -77,9 +77,8 @@ body.modal-open #remove-from-shelves + .tags {
 }
 
 .cwa-half-star::after {
-    width: var(--cwa-star-fill, 0%);
-    overflow: hidden;
     color: rgb(255, 105, 180);
+    clip-path: inset(0 calc(100% - var(--cwa-star-fill, 0%)) 0 0);
 }
 
 /* Target only specific selectpicker dropdowns (Tags and other form elements) */
