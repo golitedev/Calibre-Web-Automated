@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
-import atexit
 import os
 import sys
 import sqlite3
@@ -34,6 +33,7 @@ from sqlalchemy import create_engine, exc, exists, event, text
 from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.expression import func
 try:
     # Compatibility with sqlalchemy 2.0
@@ -1405,13 +1405,17 @@ def password_change(user_credentials=None):
 
 
 def get_new_session_instance():
+    """Return an isolated app.db session whose connections close on release.
+
+    Background jobs need their own scoped session, but retaining a separately
+    pooled engine for every job leaks SQLite database descriptors.  NullPool
+    makes ``close()`` and ``remove()`` close the physical connection while
+    preserving the scoped-session API expected by existing task callers.
+    """
     new_engine = create_engine('sqlite:///{0}'.format(app_DB_path), echo=False,
-                               connect_args={'timeout': 30})
+                               connect_args={'timeout': 30}, poolclass=NullPool)
     new_session = scoped_session(sessionmaker())
     new_session.configure(bind=new_engine)
-
-    atexit.register(lambda: new_session.remove() if new_session else True)
-
     return new_session
 
 

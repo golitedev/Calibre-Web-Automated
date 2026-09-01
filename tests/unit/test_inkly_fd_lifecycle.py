@@ -8,8 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 import requests
+from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
-from cps import inkly_outbox
+from cps import inkly_outbox, ub
 from cps.services import inkly
 
 ATTEMPTS = 1000
@@ -180,6 +182,37 @@ def test_worker_closes_only_sessions_it_creates(monkeypatch):
     inkly_outbox.deliver_due_inkly_events()
 
     assert session.close_count == 1
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="Linux /proc is required")
+def test_repeated_transient_app_db_sessions_do_not_leak_fds(monkeypatch, tmp_path):
+    database_path = tmp_path / "app.db"
+    monkeypatch.setattr(ub, "app_DB_path", str(database_path))
+
+    def database_fd_count():
+        count = 0
+        for descriptor in os.listdir("/proc/self/fd"):
+            try:
+                target = os.readlink(f"/proc/self/fd/{descriptor}")
+            except OSError:
+                continue
+            if target.startswith(str(database_path)):
+                count += 1
+        return count
+
+    baseline = database_fd_count()
+    for attempt in range(500):
+        session = ub.get_new_session_instance()
+        assert isinstance(session.bind.pool, NullPool)
+        session.execute(text("SELECT 1")).scalar()
+        if attempt % 2:
+            session.close()
+        else:
+            session.remove()
+
+    gc.collect()
+    assert database_fd_count() <= baseline + 1
 
 
 @pytest.mark.unit
