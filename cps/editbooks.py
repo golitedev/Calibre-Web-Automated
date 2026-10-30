@@ -102,13 +102,16 @@ def edit_print_pages(book_id):
         abort(404)
     try:
         print_pages.set_page_count(book.uuid, request.form.get("print_page_count"))
-        ub.session.commit()
+        book.last_modified = datetime.now(timezone.utc)
+        calibre_db.set_metadata_dirty(book.id)
+        calibre_db.session.commit()
+        calibre_db.session.expire_all()
     except ValueError as error:
-        ub.session.rollback()
+        calibre_db.session.rollback()
         flash(_(str(error)), category="error")
         return redirect(url_for("edit-book.show_edit_book", book_id=book_id))
     except Exception:
-        ub.session.rollback()
+        calibre_db.session.rollback()
         raise
     try:
         inkly.queue_book_metadata_for_users(book)
@@ -1520,7 +1523,9 @@ def delete_book_from_table(book_id, book_format, json_response, location="", ref
 
 
 def render_edit_book(book_id):
-    cc = calibre_db.session.query(db.CustomColumns).filter(db.CustomColumns.datatype.notin_(db.cc_exceptions)).all()
+    cc = (calibre_db.session.query(db.CustomColumns)
+          .filter(db.CustomColumns.datatype.notin_(db.cc_exceptions))
+          .filter(db.CustomColumns.label != print_pages.LABEL).all())
     book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
     if not book:
         flash(_("Oops! Selected book is unavailable. File does not exist or is not accessible"),

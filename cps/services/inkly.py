@@ -312,7 +312,7 @@ def build_inkly_book(book, include_cover=False):
         "identifiers": identifiers,
         "totalPages": print_page_count or _total_pages(book),
         "printPageCount": print_page_count,
-        "printPageCountUpdatedAt": get_page_count_updated_at(book.uuid) if print_page_count else None,
+        "printPageCountUpdatedAt": get_page_count_updated_at(book.uuid, print_page_count) if print_page_count else None,
         "description": _text(getattr(comments[0], "text", None) if comments else None, 10_000),
         "publisher": _text(getattr(publishers[0], "name", None) if publishers else None, 500),
         "language": _text(

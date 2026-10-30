@@ -10,6 +10,7 @@ import re
 import json
 import time
 import threading
+import subprocess
 from datetime import datetime, timezone
 from urllib.parse import quote
 import unidecode
@@ -785,6 +786,13 @@ class CalibreDB:
                 return None
 
             db_writable = os.access(dbpath, os.W_OK)
+
+            if db_writable:
+                try:
+                    from .print_pages import prepare_library
+                    prepare_library(config_calibre_dir, app_db_path)
+                except (ValueError, OSError, sqliteOperationalError, subprocess.SubprocessError) as error:
+                    log.warning("Could not prepare Calibre print page counts: %s", error)
 
             try:
                 cls.engine = create_engine('sqlite://',

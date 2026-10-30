@@ -25,7 +25,7 @@ end
 local CWASync = WidgetContainer:extend{
     name = "cwasync",
     title = _("Login to CWA Server"),
-    version = "1.1.0",  -- Plugin version
+    version = "1.1.1",  -- Plugin version
 
     push_timestamp = nil,
     pull_timestamp = nil,
@@ -187,9 +187,13 @@ function CWASync:onDispatcherRegisterActions()
 end
 
 function CWASync:onReaderReady()
+    self._cwa_closed = false
+    self._last_print_snapshot = nil
     self.print_pages = require("CWAPrintPages").new(self.ui)
     self.print_pages:setCount(self.ui.doc_settings:readSetting("cwa_print_page_count"))
-    UIManager:nextTick(function() self.print_pages:install() end)
+    UIManager:nextTick(function()
+        if not self._cwa_closed then self.print_pages:install() end
+    end)
     if self.settings.auto_sync then
         UIManager:nextTick(function()
             self:getProgress(true, false)
@@ -658,6 +662,7 @@ function CWASync:updateProgress(ensure_networking, interactive, on_suspend)
         service_url = self.settings.server .. "/kosync",
         service_spec = self.path .. "/api.json"
     }
+    local sync_document = self.ui.document
     local doc_digest = self:getDocumentDigest()
     if not doc_digest then
         logger.warn("CWASync: Unable to compute document digest for", self.view and self.view.document and self.view.document.file)
@@ -681,7 +686,7 @@ function CWASync:updateProgress(ensure_networking, interactive, on_suspend)
         Device.model,
         self.device_id,
         function(ok, body)
-            if ok then self:applyPrintPages(body) end
+            if ok then self:applyPrintPages(body, sync_document) end
             logger.dbg("CWASync: [Push] progress to", percentage * 100, "% =>", progress, "for", self.view.document.file)
             logger.dbg("CWASync: ok:", ok, "body:", body)
             if interactive then
@@ -725,7 +730,8 @@ function CWASync:updateProgress(ensure_networking, interactive, on_suspend)
     self.push_timestamp = now
 end
 
-function CWASync:applyPrintPages(body)
+function CWASync:applyPrintPages(body, document)
+    if self._cwa_closed or (document and self.ui.document ~= document) then return end
     if type(body) == "string" then
         local ok, decoded = pcall(Json.decode, body)
         if not ok then return end
@@ -733,12 +739,19 @@ function CWASync:applyPrintPages(body)
     end
     -- Explicit capability flag also works with decoders that drop JSON null.
     if type(body) ~= "table" or not body.print_page_count_managed or not self.print_pages then return end
+    local snapshot = body.print_page_count_observed_at
+    if type(snapshot) == "string" then
+        -- Push and pull requests can complete out of order for the same book.
+        if self._last_print_snapshot and snapshot < self._last_print_snapshot then return end
+        self._last_print_snapshot = snapshot
+    end
     local count = body.print_page_count
     if type(count) ~= "number" then count = nil end
     self.print_pages:setCount(count)
 end
 
 function CWASync:getProgress(ensure_networking, interactive, metadata_only)
+    if self._cwa_closed then return end
     if not self.settings.username or not self.settings.password then
         if interactive then
             promptLogin()
@@ -765,6 +778,7 @@ function CWASync:getProgress(ensure_networking, interactive, metadata_only)
         service_url = self.settings.server .. "/kosync",
         service_spec = self.path .. "/api.json"
     }
+    local sync_document = self.ui.document
     local doc_digest = self:getDocumentDigest()
     if not doc_digest then
         logger.warn("CWASync: Unable to compute document digest for", self.view and self.view.document and self.view.document.file)
@@ -782,6 +796,7 @@ function CWASync:getProgress(ensure_networking, interactive, metadata_only)
         self.settings.password,
         doc_digest,
         function(ok, body)
+            if self._cwa_closed or self.ui.document ~= sync_document then return end
             logger.dbg("CWASync: [Pull] progress for", self.view.document.file)
             logger.dbg("CWASync: ok:", ok, "body:", body)
 
@@ -814,7 +829,7 @@ function CWASync:getProgress(ensure_networking, interactive, metadata_only)
                 return
             end
 
-            self:applyPrintPages(body)
+            self:applyPrintPages(body, sync_document)
             if metadata_only then return end
 
             if not body.percentage then
@@ -1018,6 +1033,7 @@ function CWASync:registerEvents()
 end
 
 function CWASync:onCloseWidget()
+    self._cwa_closed = true
     UIManager:unschedule(self.periodic_push_task)
     self.periodic_push_task = nil
 end

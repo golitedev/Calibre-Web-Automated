@@ -24,9 +24,9 @@
   <form class="padded-bottom" action="{{ url_for('edit-book.edit_print_pages', book_id=book.id) }}" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
-      <label for="print_page_count">{{ _('Print edition page count') }}</label>
+      <label for="print_page_count">{{ _('Páginas reales') }}</label>
       <input type="number" min="1" max="100000" step="1" class="form-control" id="print_page_count" name="print_page_count" value="{{ print_page_count if print_page_count is not none else '' }}" aria-describedby="print-pages-help">
-      <p id="print-pages-help" class="help-block">{{ _('Used by the CWA KOReader plugin for estimated print pages and reading statistics. Leave blank to use normal KOReader numbering. Printed page boundaries are approximate.') }}</p>
+      <p id="print-pages-help" class="help-block">{{ _('Calibre column #real_pages. Used by the CWA KOReader plugin for estimated print pages and reading statistics. Leave blank to use normal KOReader numbering. Printed page boundaries are approximate.') }}</p>
     </div>
     <button type="submit" class="btn btn-primary">{{ _('Save page count') }}</button>
   </form>

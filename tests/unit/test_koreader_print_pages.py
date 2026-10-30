@@ -156,5 +156,19 @@ def test_main_plugin_applies_metadata_without_needing_progress_or_moving_positio
     assert lua.eval("ui:getCurrentPage()") == 407
     lua.execute("Main.applyPrintPages(plugin, {})")
     assert lua.eval("adapter.count") == 400  # older servers preserve cached values
+    lua.execute("""
+        Main.applyPrintPages(plugin, {print_page_count_managed=true, print_page_count=380,
+            print_page_count_observed_at='2026-10-30T04:30:01.000000+00:00'})
+        Main.applyPrintPages(plugin, {print_page_count_managed=true, print_page_count=400,
+            print_page_count_observed_at='2026-10-30T04:30:00.000000+00:00'})
+    """)
+    assert lua.eval("adapter.count") == 380  # older same-book snapshot is ignored
     lua.execute("Main.applyPrintPages(plugin, {print_page_count_managed = true})")
     assert lua.eval("adapter.count") is None  # null-dropping JSON decoders clear too
+    lua.execute("Main.applyPrintPages(plugin, {print_page_count_managed = true, print_page_count = 380}, {})")
+    assert lua.eval("adapter.count") is None  # response belongs to a previous book
+    lua.execute("""
+        plugin._cwa_closed = true
+        Main.applyPrintPages(plugin, {print_page_count_managed = true, print_page_count = 380}, document)
+    """)
+    assert lua.eval("adapter.count") is None  # document has already closed

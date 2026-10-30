@@ -326,11 +326,12 @@ def enrich_response_with_book_info(response_data: Dict[str, Any], document_check
         response_data["calibre_book_format"] = book_format
         response_data["calibre_checksum_version"] = checksum_version
         from ... import calibre_db
-        from ...print_pages import get_page_count
+        from ...print_pages import get_page_count, has_page_count_column
         book = calibre_db.get_book(book_id)
-        if book:
+        if book and has_page_count_column():
             response_data["print_page_count"] = get_page_count(book.uuid)
             response_data["print_page_count_managed"] = True
+            response_data["print_page_count_observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
     return response_data, book_id, book_format, book_title, checksum_version
 

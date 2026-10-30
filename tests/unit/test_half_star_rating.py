@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 
 import pytest
 
@@ -42,7 +43,16 @@ def test_half_star_component_is_first_party_and_does_not_patch_vendor_plugin():
     assert "rgb(255, 105, 180)" in styles
     assert "stroke-linejoin='round'" in styles
     assert "clip-path: inset" in styles
-    assert "cps/static/css/cwa.css" in hotfix_dockerfile
+    # Copying the entire application tree includes the stylesheet too.
+    copy_sources = []
+    for line in hotfix_dockerfile.splitlines():
+        if line.startswith("COPY "):
+            parts = [part for part in shlex.split(line)[1:] if not part.startswith("--")]
+            copy_sources.extend(parts[:-1])
+    style_path = REPO_ROOT / "cps/static/css/cwa.css"
+    assert any(style_path == REPO_ROOT / source or
+               ((REPO_ROOT / source).is_dir() and style_path.is_relative_to(REPO_ROOT / source))
+               for source in copy_sources)
     assert vendor == (REPO_ROOT / "cps/static/js/libs/bootstrap-rating-input.min.js").read_text(encoding="utf-8")
 
 
