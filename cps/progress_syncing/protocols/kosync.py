@@ -40,7 +40,7 @@ import base64
 from datetime import datetime, timezone
 from typing import Dict, Optional, Any, Tuple
 
-from ...services import SyncToken as SyncToken, hardcover
+from ...services import SyncToken as SyncToken, hardcover, inkly
 from ...kobo import push_reading_state_to_hardcover
 
 from flask import Blueprint, request, jsonify
@@ -757,10 +757,31 @@ def update_progress():
                 log.info(f"Updated ReadBook status: user={user.id}, book={book_id} "
                         f"({book_title}), status based on {percentage_float:.1f}%")
 
-                # Push to Hardcover
                 from ... import calibre_db
                 book = calibre_db.get_book(book_id)
 
+                # Use the same durable outbox as native Kobo sync. KOSync has
+                # already converted the percentage to 0-100 and persisted it.
+                # Keep this independent of Hardcover and the KOReader response.
+                try:
+                    inkly.queue_reading_state(user, book, {
+                        "CurrentBookmark": {
+                            "ProgressPercent": percentage_float,
+                            "LastModified": timestamp.isoformat(),
+                        },
+                        "StatusInfo": {
+                            "Status": (
+                                "Finished" if percentage_float >= 99.0
+                                else "Reading" if percentage_float > 0
+                                else "ReadyToRead"
+                            ),
+                        },
+                        "KOReaderProgress": progress,
+                    })
+                except Exception:
+                    log.error("Failed to enqueue Inkly KOSync progress for book %s; progress was saved", book_id)
+
+                # Push to Hardcover independently of Inkly.
                 if user is not None:
                     log.debug(f"Going to sync book {book_id} to Hardcover.")
                     push_reading_state_to_hardcover(user, book, int(percentage_float))

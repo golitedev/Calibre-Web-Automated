@@ -448,9 +448,11 @@ And just like that, Calibre-Web Automated should be up and running! **HOWEVER** 
 
 CWA now includes built-in KOReader syncing functionality, allowing you to sync your reading progress across devices using KOReader. This feature provides a modern, secure alternative to traditional KOReader sync servers. Navigate to `http://your-cwa-instance:8083/kosync` in your browser where you'll find download links and installation instructions for the CWA KOReader plugin.
 
-## Inkly Kobo synchronization
+## Inkly Kobo and KOReader synchronization
 
 This fork can send Kobo reading states and structured annotations to Inkly through a durable local outbox. Enable it per user from **Profile → OAuth & API Integrations**, then enter the Inkly base URL and the connection token generated in **Ajustes → Integraciones → Calibre-Web Automated**. CWA appends `/api/integrations/cwa/events` to the base URL.
+
+KOReader progress received through KOSync also queues Inkly reading-state events when CWA can match the document to a Calibre book. It uses the same per-user Inkly settings and outbox, preserves fractional percentages, and follows CWA's status thresholds (0% unread, above 0% reading, 99% or more finished). KOReader highlights and notes are not transmitted by this progress endpoint.
 
 The integration is opt-in and independent of Hardcover. Events are queued in `app.db` and delivered by CWA's existing scheduler, so Inkly availability does not block Kobo synchronization. The token is never rendered or logged. CWA currently has no encrypted per-user secret store, so the token is retained in the same protected `app.db` credential storage pattern used by existing third-party credentials; protect the `/config` volume and database accordingly.
 
