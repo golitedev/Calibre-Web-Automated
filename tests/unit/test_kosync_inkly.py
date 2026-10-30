@@ -16,6 +16,7 @@ kosync = importlib.import_module("cps.progress_syncing.protocols.kosync")
 
 @pytest.fixture
 def sync_context(monkeypatch):
+    monkeypatch.setattr("cps.print_pages.get_page_count", lambda _uuid: None)
     user = SimpleNamespace(
         id=7, inkly_enabled=True, inkly_base_url="https://inkly.example",
         inkly_token="test-only-token",

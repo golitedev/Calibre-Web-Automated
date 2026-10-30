@@ -1342,6 +1342,7 @@ def init_db(app_db_path):
     # Import integration models before create_all so new installations create
     # their tables alongside the rest of app.db.
     from . import inkly_outbox  # noqa: F401
+    from . import print_pages  # noqa: F401
 
     if os.path.exists(app_db_path):
         Base.metadata.create_all(engine)

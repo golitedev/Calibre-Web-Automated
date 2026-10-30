@@ -8,6 +8,7 @@ pytest-cov>=4.1.0
 pytest-mock>=3.12.0
 pytest-timeout>=2.2.0
 pytest-xdist>=3.5.0
+lupa>=2.0,<3.0                # Execute KOReader plugin tests with LuaJIT
 
 # Integration testing
 testcontainers>=3.7.0

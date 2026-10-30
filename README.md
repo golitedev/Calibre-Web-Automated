@@ -454,6 +454,18 @@ This fork can send Kobo reading states and structured annotations to Inkly throu
 
 KOReader progress received through KOSync also queues Inkly reading-state events when CWA can match the document to a Calibre book. It uses the same per-user Inkly settings and outbox, preserves fractional percentages, and follows CWA's status thresholds (0% unread, above 0% reading, 99% or more finished). KOReader highlights and notes are not transmitted by this progress endpoint.
 
+### Manage KOReader print page counts from CWA
+
+Open **Edit metadata → Print edition page count**, enter the chosen edition's total (for example, 380), and click **Save page count**. This is a library-wide setting stored by Calibre book UUID in CWA's `/config/app.db`; it does not rewrite the EPUB. Leave the field blank and save to restore KOReader's normal numbering on its next metadata fetch.
+
+After deploying this version, download **CWA Sync Plugin** from `/kosync` again, replace `cwasync.koplugin` inside the Kobo's `koreader/plugins/` folder, and restart KOReader. Version 1.1.0 includes the print-page adapter in the same ZIP; no separate replacement of KOReader's statistics plugin is needed. Keep the existing CWA server/login settings. This is a one-time plugin update, not a per-book setup step.
+
+The plugin fetches the count when opening a book online or reconnecting, and on progress syncs. Counts are fetched even when automatic position sync is disabled; a metadata-only fetch does not move the reading position. A new download needs to be opened online once so its checksum can be matched. Cached counts work offline. The counter and current-book statistics show estimated print pages; the percentage sent by KOSync and the real EPUB navigation positions remain unchanged. PDFs and other fixed-page documents retain their native numbering.
+
+The adapter uses KOReader's existing `page_stat` rescaling view: raw screen-page/time records remain intact while the per-book statistics total uses the CWA count. The book map still draws screen coordinates. Clearing the count restores the normal scale. A total alone cannot reproduce exact printed page boundaries, and independent third-party status/sleep-screen plugins may use their own counters.
+
+Inkly receives the explicitly selected count and its update timestamp. Deploy Inkly's `20261030010000_cwa_print_page_count.sql` migration and accompanying receiver code before enabling this field in production. Inkly converts percentage entries and rescales CWA's approximate page entries transactionally, retains exact manually entered pages, and rejects stale page-count snapshots. Clearing CWA's override does not erase an existing Inkly edition total.
+
 The integration is opt-in and independent of Hardcover. Events are queued in `app.db` and delivered by CWA's existing scheduler, so Inkly availability does not block Kobo synchronization. The token is never rendered or logged. CWA currently has no encrypted per-user secret store, so the token is retained in the same protected `app.db` credential storage pattern used by existing third-party credentials; protect the `/config` volume and database accordingly.
 
 ---

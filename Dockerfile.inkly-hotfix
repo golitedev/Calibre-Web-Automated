@@ -8,8 +8,11 @@ FROM ${BASE_IMAGE}
 
 ARG VERSION
 
-COPY --chown=abc:abc cps/ub.py /app/calibre-web-automated/cps/ub.py
-COPY --chown=abc:abc cps/progress_syncing/protocols/kosync.py /app/calibre-web-automated/cps/progress_syncing/protocols/kosync.py
-COPY --chown=abc:abc cps/static/css/cwa.css /app/calibre-web-automated/cps/static/css/cwa.css
+COPY --chown=abc:abc cps/ /app/calibre-web-automated/cps/
+COPY --chown=abc:abc koreader/plugins/cwasync.koplugin/ /app/calibre-web-automated/koreader/plugins/cwasync.koplugin/
 
-RUN echo "${VERSION}" > /app/CWA_RELEASE
+# Keep the downloadable plugin paired with the updated server modules/templates.
+RUN cd /app/calibre-web-automated/koreader/plugins && \
+    rm -f /app/calibre-web-automated/cps/static/koplugin.zip && \
+    zip -qr /app/calibre-web-automated/cps/static/koplugin.zip cwasync.koplugin && \
+    echo "${VERSION}" > /app/CWA_RELEASE

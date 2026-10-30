@@ -21,6 +21,16 @@
     {% endif %}
 {% endif %}
 
+  <form class="padded-bottom" action="{{ url_for('edit-book.edit_print_pages', book_id=book.id) }}" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-group">
+      <label for="print_page_count">{{ _('Print edition page count') }}</label>
+      <input type="number" min="1" max="100000" step="1" class="form-control" id="print_page_count" name="print_page_count" value="{{ print_page_count if print_page_count is not none else '' }}" aria-describedby="print-pages-help">
+      <p id="print-pages-help" class="help-block">{{ _('Used by the CWA KOReader plugin for estimated print pages and reading statistics. Leave blank to use normal KOReader numbering. Printed page boundaries are approximate.') }}</p>
+    </div>
+    <button type="submit" class="btn btn-primary">{{ _('Save page count') }}</button>
+  </form>
+
 {%  if source_formats|length > 0 and conversion_formats|length > 0 %}
   <div class="text-center more-stuff"><h4>{{_('Convert book format:')}}</h4>
       <form class="padded-bottom" action="{{ url_for('edit-book.convert_bookformat', book_id=book.id) }}" method="post" id="book_convert_frm">

@@ -325,6 +325,12 @@ def enrich_response_with_book_info(response_data: Dict[str, Any], document_check
         response_data["calibre_book_title"] = book_title
         response_data["calibre_book_format"] = book_format
         response_data["calibre_checksum_version"] = checksum_version
+        from ... import calibre_db
+        from ...print_pages import get_page_count
+        book = calibre_db.get_book(book_id)
+        if book:
+            response_data["print_page_count"] = get_page_count(book.uuid)
+            response_data["print_page_count_managed"] = True
 
     return response_data, book_id, book_format, book_title, checksum_version
 
@@ -575,7 +581,8 @@ def get_progress(document: str):
         progress_record = get_progress_record(user.id, document, book_id)
 
         if not progress_record:
-            return create_sync_response({})
+            # A freshly downloaded book still needs its page-count metadata.
+            return create_sync_response(response_data)
 
         # KOReader expects percentage as a decimal fraction (0.9411 = 94.11%)
         # We store it as percentage (0-100), so convert back to decimal (0-1)

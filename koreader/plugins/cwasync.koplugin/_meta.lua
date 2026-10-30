@@ -4,5 +4,5 @@ local _ = require("gettext")
 return {
     name = "cwasync",
     fullname = _("CWA Progress Sync"),
-    description = _([[Synchronizes your reading progress to Calibre Web Automated and across your KOReader devices.]]),
+    description = _([[Synchronizes reading progress with Calibre Web Automated and automatically applies CWA print page counts to the footer and reading statistics.]]),
 }

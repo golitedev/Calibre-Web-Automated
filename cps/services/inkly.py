@@ -273,6 +273,8 @@ def _cover_signature(book):
 
 def build_inkly_book(book, include_cover=False):
     """Build the single shared Calibre/CWA -> Inkly book mapping."""
+    from ..print_pages import get_page_count, get_page_count_updated_at
+    print_page_count = get_page_count(getattr(book, "uuid", None))
     raw_uuid = _text(getattr(book, "uuid", None), 200)
     if not raw_uuid:
         raw_uuid = "calibre-" + str(getattr(book, "id", "unknown"))
@@ -308,7 +310,9 @@ def build_inkly_book(book, include_cover=False):
         "isbn10": isbn10,
         "isbn13": isbn13,
         "identifiers": identifiers,
-        "totalPages": _total_pages(book),
+        "totalPages": print_page_count or _total_pages(book),
+        "printPageCount": print_page_count,
+        "printPageCountUpdatedAt": get_page_count_updated_at(book.uuid) if print_page_count else None,
         "description": _text(getattr(comments[0], "text", None) if comments else None, 10_000),
         "publisher": _text(getattr(publishers[0], "name", None) if publishers else None, 500),
         "language": _text(

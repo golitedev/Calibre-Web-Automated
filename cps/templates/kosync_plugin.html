@@ -134,6 +134,7 @@
         <a href="{{ url_for('static', filename='koplugin.zip') }}" class="kosync-download-btn">
           📥 Download CWA Sync Plugin
         </a>
+        <p class="help-block">Version 1.1.0 includes automatic print page counts. Set a book's count in Edit metadata, install this plugin once, and restart KOReader. Counts are cached for offline reading.</p>
         {% else %}
         <div class="kosync-warning" style="margin-top: 1rem;">
           {{_('Download is available after enabling KOReader Sync in CWA Settings.')}}

@@ -201,6 +201,7 @@ def test_outbox_network_failure_uses_backoff_and_keeps_event_pending():
 
 @pytest.mark.unit
 def test_metadata_queue_targets_only_linked_users_without_network_calls(monkeypatch):
+    monkeypatch.setattr("cps.print_pages.get_page_count", lambda _uuid: None)
     class FakeColumn:
         def __eq__(self, value):
             return self

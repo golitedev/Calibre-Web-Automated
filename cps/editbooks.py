@@ -29,6 +29,7 @@ from .clean_html import clean_string
 from . import config, ub, db, calibre_db
 from .services.worker import WorkerThread
 from .services import inkly
+from . import print_pages
 from .tasks.upload import TaskUpload
 from .render_template import render_title_template
 from .kobo_sync_status import change_archived_books
@@ -90,6 +91,31 @@ def show_edit_book(book_id):
 @edit_required
 def edit_book(book_id):
     return do_edit_book(book_id)
+
+
+@editbook.route("/admin/book/<int:book_id>/print-pages", methods=["POST"])
+@login_required_if_no_ano
+@edit_required
+def edit_print_pages(book_id):
+    book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
+    if not book:
+        abort(404)
+    try:
+        print_pages.set_page_count(book.uuid, request.form.get("print_page_count"))
+        ub.session.commit()
+    except ValueError as error:
+        ub.session.rollback()
+        flash(_(str(error)), category="error")
+        return redirect(url_for("edit-book.show_edit_book", book_id=book_id))
+    except Exception:
+        ub.session.rollback()
+        raise
+    try:
+        inkly.queue_book_metadata_for_users(book)
+    except Exception:
+        log.error("Failed to queue Inkly page-count metadata for book %s", book_id)
+    flash(_("Print page count saved. KOReader will fetch it on its next sync."), category="success")
+    return redirect(url_for("edit-book.show_edit_book", book_id=book_id))
 
 
 @editbook.route("/upload", methods=["POST"])
@@ -1536,6 +1562,7 @@ def render_edit_book(book_id):
         ub.HardcoverBookBlacklist.book_id == book.id
     ).first()
     return render_title_template('book_edit.html', book=book, authors=author_names, cc=cc,
+                                 print_page_count=print_pages.get_page_count(book.uuid),
                                  title=_("edit metadata"), page="editbook",
                                  conversion_formats=allowed_conversion_formats,
                                  config=config,

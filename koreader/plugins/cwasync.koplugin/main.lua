@@ -25,7 +25,7 @@ end
 local CWASync = WidgetContainer:extend{
     name = "cwasync",
     title = _("Login to CWA Server"),
-    version = "1.0.2",  -- Plugin version
+    version = "1.1.0",  -- Plugin version
 
     push_timestamp = nil,
     pull_timestamp = nil,
@@ -187,10 +187,16 @@ function CWASync:onDispatcherRegisterActions()
 end
 
 function CWASync:onReaderReady()
+    self.print_pages = require("CWAPrintPages").new(self.ui)
+    self.print_pages:setCount(self.ui.doc_settings:readSetting("cwa_print_page_count"))
+    UIManager:nextTick(function() self.print_pages:install() end)
     if self.settings.auto_sync then
         UIManager:nextTick(function()
             self:getProgress(true, false)
         end)
+    end
+    if not self.settings.auto_sync and NetworkMgr:isConnected() then
+        UIManager:nextTick(function() self:getProgress(false, false, true) end)
     end
     -- NOTE: Keep in mind that, on Android, turning on WiFi requires a focus switch, which will trip a Suspend/Resume pair.
     --       NetworkMgr will attempt to hide the damage to avoid a useless pull -> push -> pull dance instead of the single pull requested.
@@ -675,6 +681,7 @@ function CWASync:updateProgress(ensure_networking, interactive, on_suspend)
         Device.model,
         self.device_id,
         function(ok, body)
+            if ok then self:applyPrintPages(body) end
             logger.dbg("CWASync: [Push] progress to", percentage * 100, "% =>", progress, "for", self.view.document.file)
             logger.dbg("CWASync: ok:", ok, "body:", body)
             if interactive then
@@ -718,7 +725,20 @@ function CWASync:updateProgress(ensure_networking, interactive, on_suspend)
     self.push_timestamp = now
 end
 
-function CWASync:getProgress(ensure_networking, interactive)
+function CWASync:applyPrintPages(body)
+    if type(body) == "string" then
+        local ok, decoded = pcall(Json.decode, body)
+        if not ok then return end
+        body = decoded
+    end
+    -- Explicit capability flag also works with decoders that drop JSON null.
+    if type(body) ~= "table" or not body.print_page_count_managed or not self.print_pages then return end
+    local count = body.print_page_count
+    if type(count) ~= "number" then count = nil end
+    self.print_pages:setCount(count)
+end
+
+function CWASync:getProgress(ensure_networking, interactive, metadata_only)
     if not self.settings.username or not self.settings.password then
         if interactive then
             promptLogin()
@@ -736,7 +756,7 @@ function CWASync:getProgress(ensure_networking, interactive)
         return
     end
 
-    if ensure_networking and NetworkMgr:willRerunWhenOnline(function() self:getProgress(ensure_networking, interactive) end) then
+    if ensure_networking and NetworkMgr:willRerunWhenOnline(function() self:getProgress(ensure_networking, interactive, metadata_only) end) then
         return
     end
 
@@ -793,6 +813,9 @@ function CWASync:getProgress(ensure_networking, interactive)
                 end
                 return
             end
+
+            self:applyPrintPages(body)
+            if metadata_only then return end
 
             if not body.percentage then
                 logger.dbg("CWASync: body.percentage missing")
@@ -958,7 +981,7 @@ function CWASync:_onNetworkConnected()
     logger.dbg("CWASync: onNetworkConnected")
     UIManager:scheduleIn(0.5, function()
         -- Network is supposed to be on already, don't wrap this in willRerunWhenOnline
-        self:getProgress(false, false)
+        self:getProgress(false, false, not self.settings.auto_sync)
     end)
 end
 
@@ -977,6 +1000,7 @@ function CWASync:onCWASyncPullProgress()
 end
 
 function CWASync:registerEvents()
+    self.onNetworkConnected = self._onNetworkConnected
     if self.settings.auto_sync then
         self.onCloseDocument = self._onCloseDocument
         self.onPageUpdate = self._onPageUpdate
@@ -989,7 +1013,6 @@ function CWASync:registerEvents()
         self.onPageUpdate = nil
         self.onResume = nil
         self.onSuspend = nil
-        self.onNetworkConnected = nil
         self.onNetworkDisconnecting = nil
     end
 end
