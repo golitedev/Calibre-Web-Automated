@@ -37,6 +37,7 @@ Reference: https://github.com/koreader/koreader-sync-server
 """
 
 import base64
+import math
 from datetime import datetime, timezone
 from typing import Dict, Optional, Any, Tuple
 
@@ -589,13 +590,16 @@ def get_progress(document: str):
         # We store it as percentage (0-100), so convert back to decimal (0-1)
         percentage_decimal = progress_record.percentage / 100.0
 
+        recorded_at = progress_record.timestamp
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
         response_updates = {
             "document": document,
             "progress": progress_record.progress,
             "percentage": percentage_decimal,
             "device": progress_record.device,
             "device_id": progress_record.device_id,
-            "timestamp": int(progress_record.timestamp.timestamp())
+            "timestamp": int(recorded_at.timestamp())
         }
 
         response_data = {**response_data, **response_updates}
@@ -699,12 +703,22 @@ def update_progress():
             percentage_float = float(percentage)
             if percentage_float <= 1.0:
                 percentage_float *= 100.0
-            if percentage_float < 0 or percentage_float > 100:
+            if not math.isfinite(percentage_float) or percentage_float < 0 or percentage_float > 100:
                 raise ValueError("Percentage out of range")
         except (ValueError, TypeError) as e:
             raise KOSyncError(ERROR_INVALID_FIELDS, f"Invalid percentage value: {e}")
 
         timestamp = datetime.now(timezone.utc)
+        # New clients retain the reading time through offline delivery/retries.
+        # Legacy clients keep their existing server-receipt timestamp behavior.
+        if data.get("timestamp") is not None:
+            try:
+                source = float(data["timestamp"])
+                if not math.isfinite(source) or source <= 0 or source > timestamp.timestamp() + 300:
+                    raise ValueError("Invalid source timestamp")
+                timestamp = datetime.fromtimestamp(source, timezone.utc)
+            except (ValueError, TypeError, OverflowError, OSError):
+                raise KOSyncError(ERROR_INVALID_FIELDS, "Invalid source timestamp")
 
         response_data = {
             "document": document,
@@ -718,6 +732,18 @@ def update_progress():
 
         # Check if progress record exists
         progress_record = get_progress_record(user.id, document, book_id)
+
+        previous_time = getattr(progress_record, "timestamp", None)
+        if previous_time and data.get("timestamp") is not None:
+            previous_time = previous_time.replace(tzinfo=timezone.utc) if previous_time.tzinfo is None else previous_time
+            same_state = (progress_record.progress == progress and progress_record.percentage == percentage_float)
+            if timestamp < previous_time or (timestamp == previous_time and (
+                same_state or percentage_float <= progress_record.percentage
+            )):
+                # Acknowledge delayed/duplicate deliveries without changing CWA,
+                # its native Kobo state, or its existing Inkly/Hardcover sinks.
+                response_data["accepted"] = False
+                return create_sync_response(response_data)
 
         # Prefer the book_id as the identifier (if we have it) to ensure that all documents associated with the same
         # Calibre book share the same progress record even if they have different checksums.

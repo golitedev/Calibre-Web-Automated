@@ -1,7 +1,9 @@
 """Exercise KOSync requests through Inkly event construction, without delivery."""
 
 import importlib
-from datetime import datetime
+import os
+import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -46,10 +48,11 @@ def sync_context(monkeypatch):
     # No Inkly HTTP request belongs on the KOSync request path.
     monkeypatch.setattr(kosync.inkly, "send_inkly_event", Mock(side_effect=AssertionError("unexpected HTTP")))
 
-    def request(percentage):
+    def request(percentage, **extra):
         with Flask(__name__).test_request_context(json={
             "document": "book-checksum", "progress": "/body/section[3]",
             "percentage": percentage, "device": "KOReader", "device_id": "test-device",
+            **extra,
         }):
             response, status = kosync.update_progress()
             return response.get_json(), status
@@ -145,3 +148,55 @@ def test_first_sync_queues_inkly_for_new_progress_record(sync_context, monkeypat
     assert saved_record.percentage == 42.5
     assert ctx.operations == ["commit", "commit", "enqueue"]
     ctx.enqueue.assert_called_once()
+
+
+@pytest.mark.unit
+def test_offline_delivery_keeps_reading_timestamp_and_retries_are_idempotent(sync_context):
+    ctx = sync_context
+    source = int((datetime.now(timezone.utc) - timedelta(days=2)).timestamp())
+    assert ctx.request(0.425, timestamp=source)[1] == 200
+    assert ctx.record.timestamp.timestamp() == source
+    event = ctx.enqueue.call_args.args[1][0]
+    assert datetime.fromisoformat(event["occurredAt"].replace("Z", "+00:00")).timestamp() == source
+    body, status = ctx.request(0.425, timestamp=source)
+    assert status == 200 and body["accepted"] is False
+    ctx.enqueue.assert_called_once()
+
+
+@pytest.mark.unit
+def test_delayed_older_position_does_not_replace_a_newer_cwa_update(sync_context):
+    ctx = sync_context
+    source = int((datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp())
+    assert ctx.request(0.425, timestamp=source)[1] == 200
+    assert ctx.request(0.9, timestamp=source - 100)[0]["accepted"] is False
+    assert ctx.record.percentage == 42.5
+    ctx.enqueue.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("timestamp", ["bad", -1, float("nan"), float("inf"), 999999999999])
+def test_invalid_source_time_does_not_mutate_progress(sync_context, timestamp):
+    assert sync_context.request(0.425, timestamp=timestamp)[1] == 400
+    sync_context.session.commit.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="requires POSIX timezone support")
+def test_progress_timestamp_is_utc_even_when_nas_uses_another_timezone(sync_context):
+    ctx = sync_context
+    ctx.request(0.425)
+    ctx.record.timestamp = datetime(2026, 10, 30, 12, 0)  # SQLite stores naive UTC.
+    old_tz = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = "Etc/GMT+3"
+        time.tzset()
+        with Flask(__name__).test_request_context():
+            response, status = kosync.get_progress("book-checksum")
+        assert status == 200
+        assert response.get_json()["timestamp"] == int(datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc).timestamp())
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()

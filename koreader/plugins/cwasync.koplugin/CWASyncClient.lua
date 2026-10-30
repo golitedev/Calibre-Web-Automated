@@ -132,7 +132,8 @@ function CWASyncClient:update_progress(
         percentage,
         device,
         device_id,
-        callback)
+        callback,
+        source_timestamp)
     self.client:reset_middlewares()
     self.client:enable("Format.JSON")
     self.client:enable("GinClient")
@@ -150,6 +151,7 @@ function CWASyncClient:update_progress(
                 percentage = percentage,
                 device = device,
                 device_id = device_id,
+                timestamp = source_timestamp,
             })
         end)
         if ok then
